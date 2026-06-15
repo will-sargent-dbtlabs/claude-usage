@@ -196,11 +196,24 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   #filter-bar { background: var(--card); border-bottom: 1px solid var(--border); padding: 10px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .filter-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); white-space: nowrap; }
   .filter-sep { width: 1px; height: 22px; background: var(--border); flex-shrink: 0; }
-  #model-checkboxes { display: flex; flex-wrap: wrap; gap: 6px; }
-  .model-cb-label { display: flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; font-size: 12px; color: var(--muted); transition: border-color 0.15s, color 0.15s, background 0.15s; user-select: none; }
-  .model-cb-label:hover { border-color: var(--accent); color: var(--text); }
-  .model-cb-label.checked { background: var(--selected); border-color: var(--accent); color: var(--text); }
+  /* Model multi-select: a compact trigger in the bar that opens a grouped panel. */
+  .model-select { position: relative; flex-shrink: 0; }
+  .model-trigger { display: flex; align-items: center; gap: 8px; min-width: 170px; max-width: 320px; padding: 5px 10px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 12px; cursor: pointer; transition: border-color 0.15s; }
+  .model-trigger:hover, .model-trigger.open { border-color: var(--accent); }
+  #model-trigger-label { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .model-caret { color: var(--muted); font-size: 10px; flex-shrink: 0; transition: transform 0.15s; }
+  .model-trigger.open .model-caret { transform: rotate(180deg); }
+  .model-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; min-width: 250px; max-width: 340px; max-height: 360px; overflow-y: auto; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+  .model-panel[hidden] { display: none; }
+  .model-panel-actions { display: flex; gap: 6px; padding-bottom: 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .model-group-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 8px 8px 4px; }
+  .model-cb-label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--muted); transition: background 0.12s, color 0.12s; user-select: none; }
+  .model-cb-label:hover { background: var(--raised); color: var(--text); }
+  .model-cb-label.checked { color: var(--text); }
   .model-cb-label input { display: none; }
+  .model-cb-box { width: 15px; height: 15px; flex-shrink: 0; border-radius: 4px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1; color: transparent; transition: background 0.12s, border-color 0.12s; }
+  .model-cb-label.checked .model-cb-box { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .model-cb-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .filter-btn { padding: 3px 10px; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; white-space: nowrap; }
   .filter-btn:hover { border-color: var(--accent); color: var(--text); }
   .range-group { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
@@ -287,9 +300,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <div id="filter-bar">
   <div class="filter-label">Models</div>
-  <div id="model-checkboxes"></div>
-  <button class="filter-btn" onclick="selectAllModels()">All</button>
-  <button class="filter-btn" onclick="clearAllModels()">None</button>
+  <div class="model-select" id="model-select">
+    <button class="model-trigger" id="model-trigger" aria-haspopup="true" aria-expanded="false" onclick="toggleModelPanel(event)">
+      <span id="model-trigger-label">All models</span>
+      <span class="model-caret">&#9662;</span>
+    </button>
+    <div class="model-panel" id="model-panel" hidden>
+      <div class="model-panel-actions">
+        <button class="filter-btn" onclick="selectAllModels()">All</button>
+        <button class="filter-btn" onclick="clearAllModels()">None</button>
+      </div>
+      <div id="model-checkboxes"></div>
+    </div>
+  </div>
   <div class="filter-sep"></div>
   <div class="filter-label">Range</div>
   <div class="range-group">
@@ -426,6 +449,7 @@ function esc(s) {
 // ── State ──────────────────────────────────────────────────────────────────
 let rawData = null;
 let selectedModels = new Set();
+let allModelsList = [];
 let selectedRange = '30d';
 let charts = {};
 let sessionSortCol = 'last';
@@ -707,6 +731,35 @@ function modelPriority(m) {
   return 4;
 }
 
+function sortedModels(models) {
+  return [...models].sort((a, b) => {
+    const pa = modelPriority(a), pb = modelPriority(b);
+    return pa !== pb ? pa - pb : a.localeCompare(b);
+  });
+}
+
+// Compact display name for the collapsed trigger, e.g. "claude-opus-4-8" ->
+// "Opus 4.8", "claude-fable-5" -> "Fable 5". Non-Anthropic ids fall back to the
+// basename with any provider prefix and trailing date suffix stripped.
+function shortModelName(m) {
+  const ml = m.toLowerCase();
+  let family = null;
+  if (ml.includes('fable'))       family = 'Fable';
+  else if (ml.includes('mythos')) family = 'Mythos';
+  else if (ml.includes('opus'))   family = 'Opus';
+  else if (ml.includes('sonnet')) family = 'Sonnet';
+  else if (ml.includes('haiku'))  family = 'Haiku';
+  if (family) {
+    const two = m.match(/(\d+)[._-](\d+)/);
+    if (two) return family + ' ' + two[1] + '.' + two[2];
+    const one = m.match(/(\d+)/);
+    return one ? family + ' ' + one[1] : family;
+  }
+  let base = m.split('/').pop().split(':')[0];
+  base = base.replace(/[-_]?\d{6,}.*$/, '');
+  return base || m;
+}
+
 function readURLModels(allModels) {
   const param = new URLSearchParams(window.location.search).get('models');
   if (!param) {
@@ -727,25 +780,94 @@ function isDefaultModelSelection(allModels) {
 }
 
 function buildFilterUI(allModels) {
-  const sorted = [...allModels].sort((a, b) => {
-    const pa = modelPriority(a), pb = modelPriority(b);
-    return pa !== pb ? pa - pb : a.localeCompare(b);
-  });
+  allModelsList = [...allModels];
   selectedModels = readURLModels(allModels);
-  const container = document.getElementById('model-checkboxes');
-  container.innerHTML = sorted.map(m => {
+  const sorted = sortedModels(allModels);
+  const anthropic = sorted.filter(m => isBillable(m));
+  const other     = sorted.filter(m => !isBillable(m));
+  const rowHTML = m => {
     const checked = selectedModels.has(m);
-    return `<label class="model-cb-label ${checked ? 'checked' : ''}" data-model="${esc(m)}">
+    return `<label class="model-cb-label ${checked ? 'checked' : ''}" data-model="${esc(m)}" title="${esc(m)}">
       <input type="checkbox" value="${esc(m)}" ${checked ? 'checked' : ''} onchange="onModelToggle(this)">
-      ${esc(m)}
+      <span class="model-cb-box">&#10003;</span>
+      <span class="model-cb-text">${esc(m)}</span>
     </label>`;
-  }).join('');
+  };
+  let html = '';
+  // Only show a group heading when both groups are present — a single-group
+  // list doesn't need a label.
+  const labelled = anthropic.length && other.length;
+  if (anthropic.length) {
+    if (labelled) html += '<div class="model-group-label">Anthropic</div>';
+    html += anthropic.map(rowHTML).join('');
+  }
+  if (other.length) {
+    if (labelled) html += '<div class="model-group-label">Other providers</div>';
+    html += other.map(rowHTML).join('');
+  }
+  document.getElementById('model-checkboxes').innerHTML = html;
+  updateModelTriggerLabel();
 }
+
+// Collapsed trigger text, in priority order:
+//   "All models"     — everything selected
+//   "No models"      — nothing selected
+//   "All Anthropic"  — every Anthropic model (opus/sonnet/haiku/mythos/fable)
+//                      selected and no other provider; "+N" if some others too
+//   "Fable 5, Opus 4.7 +5" — otherwise, first two names + overflow count
+function updateModelTriggerLabel() {
+  const labelEl = document.getElementById('model-trigger-label');
+  if (!labelEl) return;
+  const n = selectedModels.size;
+  if (n === 0)                    { labelEl.textContent = 'No models';  return; }
+  if (n === allModelsList.length) { labelEl.textContent = 'All models'; return; }
+  const anthropic = allModelsList.filter(m => isBillable(m));
+  const others    = allModelsList.filter(m => !isBillable(m));
+  if (anthropic.length && anthropic.every(m => selectedModels.has(m))) {
+    // n < total (handled above), so when others exist at least one is unselected.
+    const otherSel = others.filter(m => selectedModels.has(m)).length;
+    labelEl.textContent = otherSel ? 'All Anthropic +' + otherSel : 'All Anthropic';
+    return;
+  }
+  const chosen = sortedModels(allModelsList).filter(m => selectedModels.has(m));
+  const shown = chosen.slice(0, 2).map(shortModelName);
+  const extra = chosen.length - shown.length;
+  labelEl.textContent = shown.join(', ') + (extra > 0 ? ' +' + extra : '');
+}
+
+function toggleModelPanel(event) {
+  if (event) event.stopPropagation();
+  const panel = document.getElementById('model-panel');
+  const trigger = document.getElementById('model-trigger');
+  const open = panel.hidden;
+  panel.hidden = !open;
+  trigger.classList.toggle('open', open);
+  trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+function closeModelPanel() {
+  const panel = document.getElementById('model-panel');
+  if (!panel || panel.hidden) return;
+  panel.hidden = true;
+  const trigger = document.getElementById('model-trigger');
+  trigger.classList.remove('open');
+  trigger.setAttribute('aria-expanded', 'false');
+}
+
+// Close the panel on outside click or Escape. Clicks inside #model-select
+// (including the checkboxes and All/None) keep it open so multiple models can
+// be toggled in one pass.
+document.addEventListener('click', (e) => {
+  const sel = document.getElementById('model-select');
+  if (sel && !sel.contains(e.target)) closeModelPanel();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModelPanel(); });
 
 function onModelToggle(cb) {
   const label = cb.closest('label');
   if (cb.checked) { selectedModels.add(cb.value);    label.classList.add('checked'); }
   else            { selectedModels.delete(cb.value); label.classList.remove('checked'); }
+  updateModelTriggerLabel();
   updateURL();
   applyFilter();
 }
@@ -754,14 +876,14 @@ function selectAllModels() {
   document.querySelectorAll('#model-checkboxes input').forEach(cb => {
     cb.checked = true; selectedModels.add(cb.value); cb.closest('label').classList.add('checked');
   });
-  updateURL(); applyFilter();
+  updateModelTriggerLabel(); updateURL(); applyFilter();
 }
 
 function clearAllModels() {
   document.querySelectorAll('#model-checkboxes input').forEach(cb => {
     cb.checked = false; selectedModels.delete(cb.value); cb.closest('label').classList.remove('checked');
   });
-  updateURL(); applyFilter();
+  updateModelTriggerLabel(); updateURL(); applyFilter();
 }
 
 // ── URL persistence ────────────────────────────────────────────────────────

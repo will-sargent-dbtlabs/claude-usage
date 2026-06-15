@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.0 — 2026-06-15
+
+### Dashboard
+
+- Redesigned the model filter as a single-line multi-select dropdown. The filter bar now shows a compact trigger that opens a panel grouping models by **Anthropic** vs **Other providers**, with the All / None actions moved inside the panel. This replaces the wrapping row of pills, which grew unwieldy as new model versions accumulated. The trigger summarises the selection: **All models**, **No models**, **All Anthropic** (every opus/sonnet/haiku/mythos/fable selected, the default view) — optionally **All Anthropic +N** when other providers are also on — or otherwise the first two model names plus a **+N** overflow. The default selection (billable models only) and `?models=` URL persistence are unchanged.
+
 ## v1.3.0 — 2026-06-15
 
 ### Dashboard
