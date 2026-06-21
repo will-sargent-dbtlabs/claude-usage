@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.5.0 — TBD
+
+### Dashboard
+
+- Added subagent attribution views: a **Subagent Tokens by Type** stacked bar chart and a **Top Subagent Dispatches** table, plus a Subagent Tokens stat card. Dispatched Task/Agent subagents (and Claude Code's auto-compaction) are surfaced separately while remaining included in the overall totals; both respect the existing model + range filters. All dynamic values are escaped via `esc()` (#140, thanks @john988).
+
+### Scanner / CLI
+
+- The scanner now attributes subagent usage: new `turns.is_subagent` / `turns.agent_id` columns and an `agents` dispatch table (additive, in-place migrations — existing DBs upgrade without a rebuild). Subagents are detected via `isSidechain` / `agentId` / a `subagents/` transcript path, and dispatch metadata (agent type, status, duration, tool-use count) is captured from the parent tool result (#140, thanks @john988).
+- `today` and `stats` now print subagent token + turn summaries (counted as a subset of the totals, not added on top) (#140, thanks @john988).
+
+### Packaging / docs
+
+- Added Docker support: a `Dockerfile` and `scripts/run-docker.sh` run the dashboard in a container with `~/.claude` mounted **read-only** and the SQLite DB in a named volume, isolated from your home directory. A new `CLAUDE_USAGE_DB` env var makes the DB path configurable at runtime (default unchanged: `~/.claude/usage.db`) (#143, thanks @RafikFarhad).
+
 ## v1.4.0 — 2026-06-15
 
 ### Dashboard
