@@ -122,7 +122,9 @@ def get_dashboard_data(db_path=DB_PATH):
         except Exception:
             duration_min = 0
         sessions_all.append({
-            "session_id":    r["session_id"][:8],
+            # Full id: the table truncates for display, but the CSV export
+            # needs the whole thing (an 8-char prefix isn't uniquely useful).
+            "session_id":    r["session_id"],
             "project":       r["project_name"] or "unknown",
             "branch":        r["git_branch"] or "",
             "topic":         r["topic"] or "",
@@ -360,6 +362,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .num { font-family: monospace; }
   .muted { color: var(--muted); }
   .topic-cell { box-sizing: border-box; min-width: 160px; max-width: 260px; overflow-wrap: anywhere; font-size: 12px; color: var(--text); }
+  .untitled { color: var(--muted); font-style: italic; }
   .section-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
   .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .section-header .section-title { margin-bottom: 0; }
@@ -1638,10 +1641,13 @@ function renderSessionsTable(sessions) {
     const costCell = isBillable(s.model)
       ? `<td class="cost">${fmtCost(cost)}</td>`
       : `<td class="cost-na">n/a</td>`;
+    const titleCell = s.topic
+      ? `<td class="topic-cell" title="${esc(s.topic)}">${esc(s.topic)}</td>`
+      : `<td class="topic-cell"><span class="untitled">Untitled</span></td>`;
     return `<tr>
-      <td class="muted" style="font-family:monospace">${esc(s.session_id)}&hellip;</td>
+      <td class="muted" style="font-family:monospace">${esc(s.session_id.slice(0, 8))}&hellip;</td>
       <td>${esc(s.project)}</td>
-      <td class="topic-cell" title="${esc(s.topic)}">${esc(s.topic)}</td>
+      ${titleCell}
       <td class="muted">${esc(s.last)}</td>
       <td class="muted">${esc(s.duration_min)}m</td>
       <td><span class="model-tag">${esc(s.model)}</span></td>

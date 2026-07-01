@@ -4,7 +4,8 @@
 
 ### Dashboard
 
-- Added a **Title** column to the Recent Sessions table (after Project) and its CSV export, showing Claude Code's own session title: a user-set `custom-title` takes priority over an AI-generated `ai-title`. Long titles wrap within the column (min width 160px). Sessions without a title record show an empty cell — there is no fallback to the first user message, so prompt text never leaks into the table (#147, thanks @arojunior).
+- Added a **Title** column to the Recent Sessions table (after Project) and its CSV export, showing Claude Code's own session title: a user-set `custom-title` takes priority over an AI-generated `ai-title`. Long titles wrap within the column (min width 160px). Sessions without a title record show a muted **Untitled** placeholder — there is no fallback to the first user message, so prompt text never leaks into the table (#147, thanks @arojunior).
+- The Recent Sessions **CSV export now includes full session IDs** (the table still shows the 8-char prefix for readability, but an 8-char prefix isn't useful in an export) (#147).
 
 ### VS Code extension
 
