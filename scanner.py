@@ -118,11 +118,11 @@ def init_db(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_subagent ON turns(is_subagent)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_agent_id ON turns(agent_id)")
     # Session topic (from custom-title / ai-title records; added in a later
-    # schema version). If we just added the column to an existing DB, flag a
-    # one-time backfill so the next scan re-reads the title records already
-    # present in transcripts scanned before topic support (see scan()).
-    if _ensure_column(conn, "sessions", "topic", "TEXT"):
-        _meta_set(conn, "topic_backfill_pending", "1")
+    # schema version). The one-time backfill of pre-existing sessions is driven
+    # by scan() via the schema_meta 'topic_backfill_done' marker (not by the
+    # column-add event), so it also covers DBs that gained the column from an
+    # earlier build that predated the backfill.
+    _ensure_column(conn, "sessions", "topic", "TEXT")
     # Conditional unique index: only dedup non-null message IDs
     conn.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_turns_message_id
@@ -593,14 +593,15 @@ def scan(projects_dir=None, projects_dirs=None, db_path=DB_PATH, verbose=True):
         jsonl_files.extend(glob.glob(str(d / "**" / "*.jsonl"), recursive=True))
     jsonl_files.sort()
 
-    # One-time topic backfill for DBs that predate the topic column: fill topics
-    # from title records in already-processed transcripts that an incremental
-    # scan would otherwise never revisit. The schema_meta flag makes this run
-    # only on the first scan after the upgrade; afterwards it's normal
-    # incremental scanning.
-    if _meta_get(conn, "topic_backfill_pending") == "1":
+    # One-time topic backfill for DBs whose sessions predate topic support: fill
+    # topics from title records in already-processed transcripts that an
+    # incremental scan would otherwise never revisit. Runs once, gated by the
+    # schema_meta 'topic_backfill_done' marker. It runs before the main loop, so
+    # on a fresh DB the sessions table is still empty and this no-ops; only DBs
+    # with pre-existing untitled sessions do real work.
+    if _meta_get(conn, "topic_backfill_done") != "1":
         filled = _backfill_topics(conn, jsonl_files)
-        _meta_set(conn, "topic_backfill_pending", "0")
+        _meta_set(conn, "topic_backfill_done", "1")
         conn.commit()
         if verbose and filled:
             print(f"Backfilled topic for {filled} existing session(s).")

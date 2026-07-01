@@ -875,12 +875,12 @@ class TestTopicBackfill(unittest.TestCase):
         conn.close()
         return row
 
-    def _set_topic_null_and_flag(self):
-        """Simulate an upgraded, pre-topic DB: clear the captured topic and
-        re-arm the one-time backfill flag."""
+    def _reset_for_backfill(self):
+        """Simulate a not-yet-backfilled DB: clear the captured topic and the
+        one-time 'done' marker so the next scan re-runs the backfill."""
         conn = get_db(self.db_path)
         conn.execute("UPDATE sessions SET topic = NULL WHERE session_id = 'sess-1'")
-        _meta_set(conn, "topic_backfill_pending", "1")
+        conn.execute("DELETE FROM schema_meta WHERE key = 'topic_backfill_done'")
         conn.commit()
         conn.close()
 
@@ -896,7 +896,7 @@ class TestTopicBackfill(unittest.TestCase):
             f.write(_make_custom_title_record(session_id="sess-1",
                                               title="Backfilled topic") + "\n")
         self._scan()
-        self._set_topic_null_and_flag()
+        self._reset_for_backfill()
 
         result = self._scan()  # file unchanged -> skipped, but backfill runs
         self.assertEqual(result["skipped"], 1)
@@ -911,15 +911,15 @@ class TestTopicBackfill(unittest.TestCase):
             f.write(_make_ai_title_record(session_id="sess-1",
                                           title="Only once") + "\n")
         self._scan()
-        self._set_topic_null_and_flag()
-        self._scan()  # backfill fires, clears the flag
+        self._reset_for_backfill()
+        self._scan()  # backfill fires, records 'done'
         self.assertEqual(self._row()["topic"], "Only once")
 
-        # The one-time flag is now recorded as done.
+        # The one-time backfill is now recorded as done.
         conn = get_db(self.db_path)
-        self.assertEqual(_meta_get(conn, "topic_backfill_pending"), "0")
-        # Null the topic WITHOUT re-arming the flag: a later scan must not refill
-        # it (the one-time backfill already ran).
+        self.assertEqual(_meta_get(conn, "topic_backfill_done"), "1")
+        # Null the topic WITHOUT clearing the marker: a later scan must not
+        # refill it (the one-time backfill already ran).
         conn.execute("UPDATE sessions SET topic = NULL WHERE session_id = 'sess-1'")
         conn.commit()
         conn.close()
@@ -937,7 +937,7 @@ class TestTopicBackfill(unittest.TestCase):
                                               title="No drift") + "\n")
         self._scan()
         before = self._row()
-        self._set_topic_null_and_flag()
+        self._reset_for_backfill()
         self._scan()
         after = self._row()
         self.assertEqual(after["topic"], "No drift")
