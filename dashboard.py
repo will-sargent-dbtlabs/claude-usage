@@ -896,7 +896,7 @@ function rangeIncludesToday(range) {
 function getRangeBounds(range) {
   if (range === 'all') return { start: null, end: null };
   const today = new Date();
-  const iso = d => d.toISOString().slice(0, 10);
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   if (range === 'today') {
     const t = iso(today);
     return { start: t, end: t };
