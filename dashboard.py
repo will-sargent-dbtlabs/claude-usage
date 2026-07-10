@@ -884,10 +884,16 @@ const RANGE_LABELS = { 'today': 'Today', 'week': 'This Week', 'month': 'This Mon
 const RANGE_TICKS  = { 'today': 1, 'week': 7, 'month': 15, 'prev-month': 15, '7d': 7, '30d': 15, '90d': 13, 'all': 12 };
 const VALID_RANGES = Object.keys(RANGE_LABELS);
 
+// Local calendar date as YYYY-MM-DD. NOT toISOString(), which formats in UTC and
+// shifts the day back in UTC+ timezones (that was the "This Month" bug, #151).
+function localISODate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function rangeIncludesToday(range) {
   if (range === 'all') return true;
   const { start, end } = getRangeBounds(range);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localISODate(new Date());
   if (start && today < start) return false;
   if (end && today > end) return false;
   return true;
@@ -896,7 +902,7 @@ function rangeIncludesToday(range) {
 function getRangeBounds(range) {
   if (range === 'all') return { start: null, end: null };
   const today = new Date();
-  const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const iso = localISODate;
   if (range === 'today') {
     const t = iso(today);
     return { start: t, end: t };
